@@ -1,7 +1,7 @@
 const int enPin = 38;
 
-const int stepPins[] = {48, 21, 36}; //These pins are incorrect, Ben has the correct version on him
-const int dirPins[]  = {47, 20, 35};
+const int stepPins[] = {21, 48, 36}; 
+const int dirPins[]  = {47, 35, 37};
 
 const int baseDelay = 500;
 const int stepMult[] = {1, 1, 1};

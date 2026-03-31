@@ -10,6 +10,18 @@ void send_command(const char* cmd) {
     DWORD bytes_written;
     WriteFile(hSerial, cmd, strlen(cmd), &bytes_written, NULL);
     printf("Sent: %s", cmd); // Debug output
+
+    // Read response
+    char buffer[256];
+    DWORD bytes_read;
+    COMMTIMEOUTS timeouts;
+    GetCommTimeouts(hSerial, &timeouts);
+    timeouts.ReadIntervalTimeout = 100; // Short timeout for response
+    SetCommTimeouts(hSerial, &timeouts);
+    if (ReadFile(hSerial, buffer, sizeof(buffer) - 1, &bytes_read, NULL) && bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+        printf("Received: %s", buffer);
+    }
 }
 
 // Define structures for motor actions and hand commands

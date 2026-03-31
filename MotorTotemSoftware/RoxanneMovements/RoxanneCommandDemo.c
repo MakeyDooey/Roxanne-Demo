@@ -1,14 +1,101 @@
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
+#include <setupapi.h>
+#include <devguid.h>
+#include <initguid.h>
 #include "RoxanneCommander.c" // Include the commander for queue functions
 
-// Function to open serial port (hardcoded to COM3, change as needed)
+const GUID GUID_DEVINTERFACE_COMPORT = {0x86E0D1E0, 0x8089, 0x11D0, {0x9C, 0xE4, 0x08, 0x00, 0x3E, 0x30, 0x1F, 0x73}};
+
+// Function to open serial port (auto-detect ESP32-S3-DevKit1 COM port)
 int open_serial() {
-    hSerial = CreateFile("\\\\.\\COM3", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-    if (hSerial == INVALID_HANDLE_VALUE) {
-        printf("Error opening COM3\n");
+    HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVINTERFACE_COMPORT, NULL, NULL, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    if (hDevInfo == INVALID_HANDLE_VALUE) {
+        printf("Error getting device info\n");
         return 0;
+    }
+
+    SP_DEVICE_INTERFACE_DATA devInterfaceData;
+    devInterfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
+
+    char comPort[256] = {0};
+    DWORD dwIndex = 0;
+    BOOL found = FALSE;
+
+    printf("Scanning for COM ports...\n");
+
+    while (SetupDiEnumDeviceInterfaces(hDevInfo, NULL, &GUID_DEVINTERFACE_COMPORT, dwIndex, &devInterfaceData)) {
+        DWORD dwSize = 0;
+        SetupDiGetDeviceInterfaceDetail(hDevInfo, &devInterfaceData, NULL, 0, &dwSize, NULL);
+
+        PSP_DEVICE_INTERFACE_DETAIL_DATA pDetailData = (PSP_DEVICE_INTERFACE_DETAIL_DATA)malloc(dwSize);
+        if (pDetailData) {
+            pDetailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
+
+            SP_DEVINFO_DATA devInfoData;
+            devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+
+            if (SetupDiGetDeviceInterfaceDetail(hDevInfo, &devInterfaceData, pDetailData, dwSize, &dwSize, &devInfoData)) {
+                char hardwareId[256] = {0};
+                char friendlyName[256] = {0};
+                SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_HARDWAREID, NULL, (PBYTE)hardwareId, sizeof(hardwareId), NULL);
+                SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_FRIENDLYNAME, NULL, (PBYTE)friendlyName, sizeof(friendlyName), NULL);
+
+                printf("Found COM port: %s - Hardware ID: %s\n", friendlyName, hardwareId);
+
+                if (strstr(hardwareId, "VID_10C4&PID_EA60") || strstr(hardwareId, "VID_303A&PID_1001") || strstr(hardwareId, "VID_0403") || strstr(hardwareId, "VID_067B")) {
+                    // Found ESP32 or USB-to-UART device
+                    char* comStart = strstr(friendlyName, "(COM");
+                    if (comStart) {
+                        char* comEnd = strstr(comStart, ")");
+                        if (comEnd) {
+                            *comEnd = '\0';
+                            strcpy(comPort, comStart + 1); // skip (
+                            found = TRUE;
+                            printf("Device detected on %s\n", comPort);
+                        }
+                    }
+                }
+            }
+            free(pDetailData);
+        }
+        if (found) break;
+        dwIndex++;
+    }
+
+    SetupDiDestroyDeviceInfoList(hDevInfo);
+
+    if (!found || strlen(comPort) == 0) {
+        printf("ESP32-S3-DevKit1 not found on any COM port (looking for VID_10C4&PID_EA60 or VID_303A&PID_1001)\n");
+        return 0;
+    }
+
+    char fullPath[256];
+    sprintf(fullPath, "\\\\.\\%s", comPort);
+
+    hSerial = CreateFile(fullPath, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (hSerial == INVALID_HANDLE_VALUE) {
+        DWORD error = GetLastError();
+        if (error == 5) { // Access denied
+            printf("Port in use, attempting to kill conflicting processes...\n");
+            system("taskkill /f /im \"Arduino IDE.exe\" /t >nul 2>&1");
+            system("taskkill /f /im arduino-cli.exe /t >nul 2>&1");
+            system("taskkill /f /im arduino-language-server.exe /t >nul 2>&1");
+            system("taskkill /f /im clangd.exe /t >nul 2>&1");
+            system("taskkill /f /im serial-discovery.exe /t >nul 2>&1");
+            system("taskkill /f /im serial-monitor.exe /t >nul 2>&1");
+            Sleep(2000); // Wait for processes to die
+            hSerial = CreateFile(fullPath, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+            if (hSerial == INVALID_HANDLE_VALUE) {
+                error = GetLastError();
+                printf("Still failed to open %s: %lu\n", comPort, error);
+                return 0;
+            }
+        } else {
+            printf("Error opening %s: %lu\n", comPort, error);
+            return 0;
+        }
     }
     DCB dcb = {0};
     dcb.DCBlength = sizeof(DCB);
@@ -21,6 +108,9 @@ int open_serial() {
     dcb.ByteSize = 8;
     dcb.StopBits = ONESTOPBIT;
     dcb.Parity = NOPARITY;
+    dcb.fBinary = TRUE;
+    dcb.fDtrControl = DTR_CONTROL_ENABLE;
+    dcb.fRtsControl = RTS_CONTROL_ENABLE;
     if (!SetCommState(hSerial, &dcb)) {
         printf("Error setting comm state\n");
         CloseHandle(hSerial);
@@ -37,7 +127,9 @@ int open_serial() {
         CloseHandle(hSerial);
         return 0;
     }
-    printf("Serial port COM3 opened at 115200 baud.\n");
+    EscapeCommFunction(hSerial, SETDTR);
+    Sleep(1000); // Wait for ESP32 to stabilize
+    printf("Serial port %s opened at 115200 baud.\n", comPort);
     return 1;
 }
 
