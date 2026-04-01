@@ -1,4 +1,7 @@
-#include <TMCStepper.h> //Must Install this Arduino Library
+#include <TMCStepper.h>
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 
 // --- PIN DEFINITIONS ---
 const int EN_PINS[]   = {38, 38, 38};
@@ -7,17 +10,24 @@ const int DIR_PINS[]  = {47, 35, 37};
 const int DIAG_PINS[] = {1, 2,  7};
 
 // --- MOTOR CONFIGS --- 
-const int SENSE = 30; //Stall Guard Sensitivity
+const int SENSE = 30;
 const int MICRO_STEPS[] = {8, 32, 32};
-const unsigned long stepDelay = 10000; // Microseconds between steps (100 steps/sec) (SPEED CONTROLLED VIA UART COMMANDS, THIS IS JUST A DEFAULT)
+const unsigned long stepDelay = 10000;
 
 // --- UART SETUP ---
 #define UART_RX 15 
 #define UART_TX 16
 #define SERIAL_PORT Serial1
-#define R_SENSE 0.11f // Standard sense resistor for BigTreeTech TMC2209
+#define CMD_PORT    Serial
+#define R_SENSE 0.11f
 
-// Initialize the 3 drivers with their MS1/MS2 hardware addresses
+// --- WIFI/WEBSOCKET SETUP ---
+const char* AP_SSID = "Roxanne";
+const char* AP_PASS = "makeydooey";
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+// Initialize drivers
 TMC2209Stepper driver0(&SERIAL_PORT, R_SENSE, 0b00); 
 TMC2209Stepper driver1(&SERIAL_PORT, R_SENSE, 0b01); 
 TMC2209Stepper driver2(&SERIAL_PORT, R_SENSE, 0b10); 
@@ -28,50 +38,74 @@ bool activeMotors[3] = {false, false, false};
 unsigned long lastStep[3] = {0, 0, 0};
 String cmdBuffer = "";
 
+// --- WEBSOCKET HANDLER ---
+void handleCommand(String cmd);
+
+void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
+               AwsEventType type, void* arg, uint8_t* data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    CMD_PORT.printf("WS client connected: %u\n", client->id());
+    client->text("CONNECTED:Roxanne");
+  } else if (type == WS_EVT_DISCONNECT) {
+    CMD_PORT.printf("WS client disconnected: %u\n", client->id());
+  } else if (type == WS_EVT_DATA) {
+    AwsFrameInfo* info = (AwsFrameInfo*)arg;
+    if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+      String msg = "";
+      for (size_t i = 0; i < len; i++) msg += (char)data[i];
+      msg.trim();
+      CMD_PORT.print("WS rx: "); CMD_PORT.println(msg);
+      handleCommand(msg);
+    }
+  }
+}
+
 void setup() {
-  // 1. Start Serial Communications
-  Serial.begin(115200);   // Debug output to USB
-  SERIAL_PORT.begin(115200, SERIAL_8N1, UART_RX, UART_TX); // To TMC Drivers
-  Serial1.begin(115200); // Commands from UART
-  delay(1000); // Give drivers a second to boot
+  CMD_PORT.begin(115200);
+  SERIAL_PORT.begin(115200, SERIAL_8N1, UART_RX, UART_TX);
+  delay(1000);
 
-  Serial.println("INITIALIZING SYSTEM...");
+  CMD_PORT.println("INITIALIZING SYSTEM...");
 
-  // 2. Setup Pins and Configure Drivers via UART
   for (int i = 0; i < 3; i++) {
     pinMode(EN_PINS[i], OUTPUT);
     pinMode(STEP_PINS[i], OUTPUT);
     pinMode(DIR_PINS[i], OUTPUT);
-    pinMode(DIAG_PINS[i], INPUT_PULLDOWN); // DIAG pins go HIGH when stalled
+    pinMode(DIAG_PINS[i], INPUT_PULLDOWN);
+    digitalWrite(EN_PINS[i], LOW);
 
-    digitalWrite(EN_PINS[i], LOW); // LOW enables the driver
-
-    // UART Configuration
     drivers[i]->begin();
-    drivers[i]->toff(5);                 // Enable software power
-    drivers[i]->rms_current(800);        // Set motor current (mA)
-    drivers[i]->en_spreadCycle(false);   // Enable StealthChop (Silent mode)
-    drivers[i]->pwm_autoscale(true);     // Required for StealthChop
-    
-    // StallGuard4 Setup (Sensorless Homing)
-    drivers[i]->TCOOLTHRS(0xFFFFF);      // Must be high to enable StallGuard
-    drivers[i]->SGTHRS(SENSE);             // Sensitivity! (0 to 255). ***YOU MUST TUNE THIS***
-
-    // Microstepping Setup
+    drivers[i]->toff(5);
+    drivers[i]->rms_current(800);
+    drivers[i]->en_spreadCycle(false);
+    drivers[i]->pwm_autoscale(true);
+    drivers[i]->TCOOLTHRS(0xFFFFF);
+    drivers[i]->SGTHRS(SENSE);
     drivers[i]->microsteps(MICRO_STEPS[i]);  
   }
 
-  // 3. Run Sensorless Calibration
   calibrateMotors();
 
-  Serial.println("READY");
+  // Start WiFi Access Point
+  WiFi.softAP(AP_SSID, AP_PASS);
+  CMD_PORT.print("AP IP: ");
+  CMD_PORT.println(WiFi.softAPIP());
+
+  // Start WebSocket
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+  server.begin();
+  CMD_PORT.println("WebSocket server started on ws://192.168.4.1/ws");
+
+  CMD_PORT.println("READY");
 }
 
 void loop() {
-  // 1. Listen for Commands from Serial1
-  while (Serial1.available() > 0) {
-    char c = Serial1.read();
+  // USB serial commands still work for debugging
+  while (CMD_PORT.available() > 0) {
+    char c = CMD_PORT.read();
     if (c == '\n' || c == '\r') {
+      cmdBuffer.trim();
       if (cmdBuffer.length() > 0) {
         handleCommand(cmdBuffer);
         cmdBuffer = "";
@@ -81,16 +115,18 @@ void loop() {
     }
   }
 
-  // 2. Execute Motor Movement (if motors are active)
+  // WebSocket cleanup
+  ws.cleanupClients();
+
+  // Step active motors
   unsigned long now = micros();
   for (int i = 0; i < 3; i++) {
     if (activeMotors[i]) {
       if (now - lastStep[i] >= stepDelay) {
         digitalWrite(STEP_PINS[i], HIGH);
-        delayMicroseconds(5); // Brief pulse
+        delayMicroseconds(5);
         digitalWrite(STEP_PINS[i], LOW);
         lastStep[i] = now;
-        Serial.print("Stepped motor "); Serial.println(i); // Debug
       }
     }
   }
@@ -99,55 +135,59 @@ void loop() {
 // --- COMMAND PARSER ---
 void handleCommand(String cmd) {
   cmd.trim();
-  
+
   if (cmd.startsWith("START:")) {
-    // Expected format: START:1:CW
     int firstColon = cmd.indexOf(':');
-    int secondColon = cmd.lastIndexOf(':');
-    
+    int secondColon = cmd.indexOf(':', firstColon + 1);
     int id = cmd.substring(firstColon + 1, secondColon).toInt();
     String dirStr = cmd.substring(secondColon + 1);
-    
+    dirStr.trim();
+
     if (id >= 0 && id < 3) {
       activeMotors[id] = true;
       digitalWrite(DIR_PINS[id], (dirStr == "CW") ? HIGH : LOW);
-      
-      Serial1.print("OK motor="); Serial1.print(id);
-      Serial1.print(" dir="); Serial1.println(dirStr);
+      String resp = "OK motor=" + String(id) + " dir=" + dirStr;
+      CMD_PORT.println(resp);
+      ws.textAll(resp);
+    } else {
+      ws.textAll("ERR invalid motor id");
+      CMD_PORT.println("ERR invalid motor id");
     }
-  } 
+  }
   else if (cmd == "STOP") {
     for (int i = 0; i < 3; i++) activeMotors[i] = false;
-    Serial1.println("OK:STOP");
+    CMD_PORT.println("OK:STOP");
+    ws.textAll("OK:STOP");
+  }
+  else if (cmd == "STATUS") {
+    for (int i = 0; i < 3; i++) {
+      String s = "motor " + String(i) + " active=" + String(activeMotors[i]);
+      CMD_PORT.println(s);
+      ws.textAll(s);
+    }
+  }
+  else {
+    String err = "ERR unknown: " + cmd;
+    CMD_PORT.println(err);
+    ws.textAll(err);
   }
 }
 
 // --- SENSORLESS HOMING ROUTINE ---
 void calibrateMotors() {
-  Serial.println("STARTING SENSORLESS CALIBRATION...");
-
-  // Create an array to remember the original microstep settings
+  CMD_PORT.println("STARTING SENSORLESS CALIBRATION...");
   uint16_t originalMicrosteps[3];
 
-  // 1. SAVE & OVERRIDE
   for (int i = 0; i < 3; i++) {
-    // Read the current setting and save it
     originalMicrosteps[i] = drivers[i]->microsteps(); 
-    
-    // Force all to 1/8 for reliable back-EMF generation
     drivers[i]->microsteps(8); 
   }
 
-  // --- CALIBRATION SEQUENCE ---
   for (int i = 0; i < 3; i++) {
-    Serial.print("Homing Motor "); Serial.print(i); Serial.print("... ");
-    
+    CMD_PORT.print("Homing Motor "); CMD_PORT.print(i); CMD_PORT.print("... ");
     digitalWrite(DIR_PINS[i], LOW); 
-
-    // Flush any stuck flags
     drivers[i]->SG_RESULT(); 
 
-    // Grace period: Take 64 blind steps to get up to speed
     for (int startup = 0; startup < 64; startup++) {
       digitalWrite(STEP_PINS[i], HIGH);
       delayMicroseconds(1000); 
@@ -155,33 +195,28 @@ void calibrateMotors() {
       delayMicroseconds(1000);
     }
 
-    // Now listen for the crash
     while (digitalRead(DIAG_PINS[i]) == LOW) {
       digitalWrite(STEP_PINS[i], HIGH);
       delayMicroseconds(1000); 
       digitalWrite(STEP_PINS[i], LOW);
       delayMicroseconds(1000);
     }
-    
-    Serial.println(" HOMED!");
-    
-    // Back away from the block
+
+    CMD_PORT.println(" HOMED!");
+
     digitalWrite(DIR_PINS[i], HIGH);
-    for(int b = 0; b < 200; b++){
+    for (int b = 0; b < 200; b++) {
       digitalWrite(STEP_PINS[i], HIGH);
       delayMicroseconds(1000);
       digitalWrite(STEP_PINS[i], LOW);
       delayMicroseconds(1000);
     }
-
-    delay(500); // Anti-crosstalk delay
+    delay(500);
   }
 
-  // 2. RESTORE ORIGINAL SETTINGS
-  Serial.println("Restoring original microstep settings...");
+  CMD_PORT.println("Restoring original microstep settings...");
   for (int i = 0; i < 3; i++) {
     drivers[i]->microsteps(originalMicrosteps[i]); 
   }
-
-  Serial.println("CALIBRATION COMPLETE.");
+  CMD_PORT.println("CALIBRATION COMPLETE.");
 }
