@@ -44,8 +44,14 @@
   .conn-bar {
     width: 100%; max-width: 960px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 12px 20px; display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
+    padding: 12px 20px; display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
   }
+  .conn-input {
+    font-family: 'Share Tech Mono', monospace; font-size: 12px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); padding: 7px 12px; width: 220px; outline: none; letter-spacing: 1px;
+  }
+  .conn-input:focus { border-color: var(--accent); }
   .conn-btn {
     font-family: 'Share Tech Mono', monospace; font-size: 12px; letter-spacing: 2px;
     padding: 8px 20px; border: 1px solid var(--dim); border-radius: 4px;
@@ -56,7 +62,7 @@
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); transition: all 0.3s; flex-shrink: 0; }
   .status-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-  .status-text { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--dim); flex: 1; }
+  .status-text { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--dim); flex: 1; min-width: 160px; }
   .status-text.on { color: var(--green); }
   .log-toggle {
     font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--dim);
@@ -71,7 +77,7 @@
   }
   .motor-card {
     background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 18px 16px; display: flex; flex-direction: column; gap: 12px;
+    padding: 18px 16px; display: flex; flex-direction: column; gap: 11px;
     position: relative; overflow: hidden; transition: border-color 0.3s;
   }
   .motor-card::before {
@@ -85,13 +91,13 @@
   .motor-name  { font-size: 13px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--motor-color); }
   .motor-badge { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--dim); border: 1px solid var(--border); padding: 2px 6px; border-radius: 3px; }
 
-  .motor-viz { display: flex; align-items: center; justify-content: center; height: 60px; }
+  .motor-viz { display: flex; align-items: center; justify-content: center; height: 56px; }
   .rotor {
-    width: 48px; height: 48px; border: 2px solid var(--border);
+    width: 44px; height: 44px; border: 2px solid var(--border);
     border-radius: 50%; position: relative; transition: border-color 0.3s;
   }
-  .rotor.cw  { animation: spinCW  0.6s linear infinite; border-color: var(--motor-color); }
-  .rotor.ccw { animation: spinCCW 0.6s linear infinite; border-color: var(--motor-color); }
+  .rotor.cw  { animation: spinCW  var(--spin-duration, 0.6s) linear infinite; border-color: var(--motor-color); }
+  .rotor.ccw { animation: spinCCW var(--spin-duration, 0.6s) linear infinite; border-color: var(--motor-color); }
   @keyframes spinCW  { from{transform:rotate(0deg)}   to{transform:rotate(360deg)}  }
   @keyframes spinCCW { from{transform:rotate(0deg)}   to{transform:rotate(-360deg)} }
   .rotor::after {
@@ -111,6 +117,39 @@
   .motor-status.running {
     color: var(--motor-color); border-color: var(--motor-color);
     background: color-mix(in srgb, var(--motor-color) 8%, transparent);
+  }
+
+  /* ── Speed slider ── */
+  .speed-row { display: flex; flex-direction: column; gap: 5px; }
+  .speed-label-row { display: flex; justify-content: space-between; align-items: center; }
+  .speed-label { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+  .speed-value { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--motor-color); letter-spacing: 1px; }
+  .speed-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 3px; border-radius: 2px; outline: none; cursor: pointer;
+    background: linear-gradient(to right, var(--motor-color) var(--pct, 50%), var(--border) var(--pct, 50%));
+  }
+  .speed-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--motor-color);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--motor-color) 60%, transparent);
+    cursor: pointer; transition: transform 0.1s;
+  }
+  .speed-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
+  .speed-slider::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; border: none;
+    background: var(--motor-color); cursor: pointer;
+  }
+  .speed-ticks {
+    display: flex; justify-content: space-between;
+    font-family: 'Share Tech Mono', monospace; font-size: 8px; color: var(--dim); padding: 0 1px;
+  }
+
+  /* calibration note under slider */
+  .calib-note {
+    font-family: 'Share Tech Mono', monospace; font-size: 8px; color: var(--dim);
+    text-align: right; opacity: 0.6;
   }
 
   .dir-toggle-row { display: flex; align-items: center; gap: 8px; }
@@ -165,6 +204,8 @@
   .log-entry.info { color: var(--yellow); }
 
   .note { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--dim); margin-top: 12px; text-align: center; letter-spacing: 1px; }
+
+  @media (max-width: 600px) { .motors-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -172,13 +213,14 @@
 <div class="header">
   <div class="logo">ESP32-S3 // TMC2209</div>
   <div class="title">MOTOR <span>CONSOLE</span></div>
-  <div class="logo">UART</div>
+  <div class="logo">WiFi WS</div>
 </div>
 
 <div class="conn-bar">
+  <input class="conn-input" id="wsUrl" type="text" value="ws://192.168.4.1:81" placeholder="ws://192.168.4.1:81" />
   <button class="conn-btn" id="connBtn" onclick="toggleConnection()">Connect</button>
   <div class="status-dot" id="statusDot"></div>
-  <div class="status-text" id="statusText">No device connected — use Chrome or Edge</div>
+  <div class="status-text" id="statusText">Not connected — join MotorConsole WiFi first</div>
   <button class="log-toggle" onclick="toggleLog()">LOG</button>
 </div>
 
@@ -186,29 +228,59 @@
 
 <div class="log-panel" id="logPanel">
   <div class="log-header">
-    <span>SERIAL LOG</span>
+    <span>WEBSOCKET LOG</span>
     <span class="log-clear" onclick="clearLog()">[ CLEAR ]</span>
   </div>
   <div id="log"></div>
 </div>
 
-<p class="note">Hold button or key (1 / 2 / 3) to run. Release to stop. FLIP corrects wiring direction.</p>
+<p class="note">1. Join WiFi: <strong>MotorConsole</strong> / pass: <strong>12345678</strong> &nbsp;|&nbsp; 2. Click Connect &nbsp;|&nbsp; Hold button or key (1/2/3) to run.</p>
 
 <script>
+  // ── Calibration ───────────────────────────────────────────────
+  // Measured matching-speed delays: M1=2780µs, M2=576µs, M3=390µs
+  // These are the delays that produce equal physical speed on each motor.
+  // The slider represents a shared "speed level" (0=slowest, 100=fastest).
+  // At any given slider position the delay sent to each motor is scaled
+  // by its own ratio so all three turn at the same physical speed.
+
+  const CALIB = [2780, 576, 390];   // µs at calibration point (= equal speed)
+  const CALIB_SLIDER = 50;          // slider position the calibration point maps to
+
+  // Each motor's delay range is derived from its calibration value.
+  // We keep the ratio constant across the full range.
+  // Slider 0  → multiply calib by RANGE_FACTOR  (slowest)
+  // Slider 100→ divide  calib by RANGE_FACTOR   (fastest)
+  const RANGE_FACTOR = 6;  // gives ~6× speed range each side of calib
+
+  // Convert a 0–100 slider value to µs delay for motor idx
+  function sliderToDelay(idx, v) {
+    // t goes from +1 (slowest) to -1 (fastest), 0 at calibration point
+    const t = 1 - (v / 50);  // v=0 → t=1, v=50 → t=0, v=100 → t=-1
+    // exponential mapping: delay = calib * RANGE_FACTOR^t
+    const delay = Math.round(CALIB[idx] * Math.pow(RANGE_FACTOR, t));
+    // clamp to hardware-safe range
+    return Math.max(200, Math.min(20000, delay));
+  }
+
   const MOTORS = [
     { name: 'Motor 1', color: '#00b4d8', badge: '1/8 µSTEP',  key: '1' },
     { name: 'Motor 2', color: '#7b2fff', badge: '1/32 µSTEP', key: '2' },
     { name: 'Motor 3', color: '#ff6b35', badge: '1/32 µSTEP', key: '3' },
   ];
 
-  let port = null, writer = null, reader = null;
+  let ws = null;
   let activeMotor = -1, activeDir = '';
   let keyHeld = {};
   let logVisible = false;
-  const dirFlipped = [false, false, false];
+  const dirFlipped  = [false, false, false];
+  const sliderVals  = [CALIB_SLIDER, CALIB_SLIDER, CALIB_SLIDER];
+  const speedTimers = [null, null, null];
 
+  // ── Build motor cards ─────────────────────────────────────────
   const grid = document.getElementById('motorGrid');
   MOTORS.forEach((m, i) => {
+    const initDelay = sliderToDelay(i, CALIB_SLIDER);
     const card = document.createElement('div');
     card.className = 'motor-card';
     card.id = `card${i}`;
@@ -222,6 +294,20 @@
         <div class="rotor" id="rotor${i}"><div class="rotor-center"></div></div>
       </div>
       <div class="motor-status" id="status${i}">IDLE</div>
+
+      <div class="speed-row">
+        <div class="speed-label-row">
+          <span class="speed-label">SPEED</span>
+          <span class="speed-value" id="speedval${i}">${initDelay}µs</span>
+        </div>
+        <input type="range" class="speed-slider" id="slider${i}"
+          min="0" max="100" value="${CALIB_SLIDER}"
+          style="--pct:${CALIB_SLIDER}%"
+          oninput="onSlider(${i}, this.value)" />
+        <div class="speed-ticks"><span>SLOW</span><span>FAST</span></div>
+        <div class="calib-note">▲ mid = calibrated match point</div>
+      </div>
+
       <div class="dir-toggle-row">
         <span class="dir-toggle-label">WIRING</span>
         <div class="dir-toggle">
@@ -241,6 +327,27 @@
     grid.appendChild(card);
   });
 
+  // ── Slider handler ────────────────────────────────────────────
+  function onSlider(idx, rawVal) {
+    const v = parseInt(rawVal);
+    sliderVals[idx] = v;
+    const delay = sliderToDelay(idx, v);
+
+    document.getElementById(`slider${idx}`).style.setProperty('--pct', v + '%');
+    document.getElementById(`speedval${idx}`).textContent = delay + 'µs';
+
+    if (activeMotor === idx) {
+      const spinMs = Math.max(80, delay / 1000 * 20);
+      document.getElementById(`rotor${idx}`).style.setProperty('--spin-duration', spinMs + 'ms');
+    }
+
+    clearTimeout(speedTimers[idx]);
+    speedTimers[idx] = setTimeout(() => {
+      sendCmd(`SPEED:${idx}:${delay}`);
+    }, 50);
+  }
+
+  // ── Direction flip ────────────────────────────────────────────
   function setFlip(idx, flipped) {
     dirFlipped[idx] = flipped;
     document.getElementById(`tognorm${idx}`).classList.toggle('selected', !flipped);
@@ -254,72 +361,45 @@
     return dir === 'CW' ? 'CCW' : 'CW';
   }
 
-  async function toggleConnection() {
-    if (port) { await disconnect(); } else { await connect(); }
+  // ── WebSocket ─────────────────────────────────────────────────
+  function toggleConnection() {
+    if (ws && ws.readyState === WebSocket.OPEN) { disconnect(); } else { connect(); }
   }
 
-  async function connect() {
-    if (!('serial' in navigator)) {
-      logEntry('Web Serial not supported — use Chrome or Edge.', 'err'); return;
-    }
-    try {
-      port = await navigator.serial.requestPort();
-      await port.open({ baudRate: 115200 });
-      const enc = new TextEncoderStream();
-      enc.readable.pipeTo(port.writable);
-      writer = enc.writable.getWriter();
-      startReading();
-      document.getElementById('connBtn').textContent = 'Disconnect';
-      document.getElementById('connBtn').classList.add('connected');
-      document.getElementById('statusDot').classList.add('on');
-      document.getElementById('statusText').textContent = 'Connected — ESP32-S3 UART';
-      document.getElementById('statusText').classList.add('on');
-      logEntry('Connected at 115200 baud via UART.', 'info');
-    } catch (e) {
-      logEntry('Connect error: ' + e.message, 'err');
-      port = null;
-    }
+  function connect() {
+    const url = document.getElementById('wsUrl').value.trim();
+    logEntry(`Connecting to ${url}…`, 'info');
+    try { ws = new WebSocket(url); } catch(e) { logEntry('Invalid URL: ' + e.message, 'err'); return; }
+    ws.onopen  = () => { logEntry('WebSocket connected.', 'info'); setConnected(true); };
+    ws.onclose = () => {
+      logEntry('WebSocket closed.', 'info'); setConnected(false);
+      activeMotor = -1; activeDir = ''; updateUI(); ws = null;
+    };
+    ws.onerror  = () => { logEntry('WebSocket error — is the ESP32 on and reachable?', 'err'); };
+    ws.onmessage = (e) => { logEntry('← ' + e.data, 'rx'); };
   }
 
-  async function disconnect() {
-    try { if (reader) reader.cancel(); } catch {}
-    try { if (writer) writer.close(); } catch {}
-    try { if (port)   await port.close(); } catch {}
-    port = null; writer = null; reader = null;
-    document.getElementById('connBtn').textContent = 'Connect';
-    document.getElementById('connBtn').classList.remove('connected');
-    document.getElementById('statusDot').classList.remove('on');
-    document.getElementById('statusText').textContent = 'No device connected — use Chrome or Edge';
-    document.getElementById('statusText').classList.remove('on');
-    activeMotor = -1; activeDir = ''; updateUI();
-    logEntry('Disconnected.', 'info');
+  function disconnect() {
+    if (ws) { ws.close(); ws = null; }
+    activeMotor = -1; activeDir = ''; updateUI(); setConnected(false);
   }
 
-  async function startReading() {
-    const dec = new TextDecoderStream();
-    port.readable.pipeTo(dec.writable);
-    reader = dec.readable.getReader();
-    let buf = '';
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += value;
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        lines.forEach(l => { if (l.trim()) logEntry('← ' + l.trim(), 'rx'); });
-      }
-    } catch (e) { logEntry('Read error: ' + e.message, 'err'); }
+  function setConnected(on) {
+    document.getElementById('connBtn').textContent = on ? 'Disconnect' : 'Connect';
+    document.getElementById('connBtn').classList.toggle('connected', on);
+    document.getElementById('statusDot').classList.toggle('on', on);
+    const st = document.getElementById('statusText');
+    st.textContent = on ? 'Connected — ESP32-S3 WebSocket' : 'Not connected — join MotorConsole WiFi first';
+    st.classList.toggle('on', on);
   }
 
-  async function sendCmd(cmd) {
-    if (!writer) { logEntry('Not connected.', 'err'); return; }
-    try {
-      await writer.write(cmd + '\n');
-      logEntry('→ ' + cmd, 'tx');
-    } catch (e) { logEntry('Send error: ' + e.message, 'err'); }
+  function sendCmd(cmd) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) { logEntry('Not connected.', 'err'); return; }
+    ws.send(cmd);
+    logEntry('→ ' + cmd, 'tx');
   }
 
+  // ── Motor control ─────────────────────────────────────────────
   function startMotor(idx, requestedDir) {
     if (activeMotor !== -1 && activeMotor !== idx) sendCmd('STOP');
     activeMotor = idx;
@@ -332,8 +412,7 @@
   function stopMotor() {
     if (activeMotor === -1) return;
     sendCmd('STOP');
-    activeMotor = -1;
-    activeDir   = '';
+    activeMotor = -1; activeDir = '';
     updateUI();
   }
 
@@ -346,6 +425,9 @@
       if (isActive) {
         const actualDir = resolveDir(i, activeDir);
         rotor.classList.add(actualDir === 'CW' ? 'cw' : 'ccw');
+        const delay = sliderToDelay(i, sliderVals[i]);
+        const spinMs = Math.max(80, delay / 1000 * 20);
+        rotor.style.setProperty('--spin-duration', spinMs + 'ms');
       }
       document.getElementById(`btn${i}`).classList.toggle('held', isActive);
       const s = document.getElementById(`status${i}`);
@@ -360,19 +442,18 @@
     });
   }
 
+  // ── Keyboard ──────────────────────────────────────────────────
   const KEY_MAP = { '1': 0, '2': 1, '3': 2 };
   document.addEventListener('keydown', e => {
     const k = e.key;
-    if (KEY_MAP[k] !== undefined && !keyHeld[k]) {
-      keyHeld[k] = true;
-      startMotor(KEY_MAP[k], 'CW');
-    }
+    if (KEY_MAP[k] !== undefined && !keyHeld[k]) { keyHeld[k] = true; startMotor(KEY_MAP[k], 'CW'); }
   });
   document.addEventListener('keyup', e => {
     const k = e.key;
     if (KEY_MAP[k] !== undefined) { delete keyHeld[k]; stopMotor(); }
   });
 
+  // ── Log ───────────────────────────────────────────────────────
   function toggleLog() {
     logVisible = !logVisible;
     document.getElementById('logPanel').classList.toggle('visible', logVisible);
@@ -387,9 +468,9 @@
   }
   function clearLog() { document.getElementById('log').innerHTML = ''; }
 
-  logEntry('Motor Console — UART mode ready.', 'info');
-  logEntry('Select cu.usbserial port when connecting.', 'info');
-  logEntry('Hold 1 / 2 / 3 to run each motor. Release to stop.', 'info');
+  logEntry('Motor Console — calibrated speed mode.', 'info');
+  logEntry('Sliders at 50% = equal physical speed on all motors.', 'info');
+  logEntry('Join WiFi "MotorConsole" then click Connect.', 'info');
 </script>
 </body>
 </html>
